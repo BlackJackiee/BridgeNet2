@@ -42,33 +42,63 @@ function ClientProcess.start()
 		end
 
 		debug.profilebegin("BridgeNet2:Receive")
+
+		-- BridgeNet doesn't maintain server to client event firing order, so this is a small fork that adds that.
+		-- It works by sending a secondary time value with every "content" data packet that's fired from the server,
+		-- then reorders them on the client using that value before the connected callbacks are invoked.
+		local orderedPackets =
+			{} :: { { ["Identifier"]: Types.Identifier, ["Content"]: Types.Content, ["ServerTimeSent"]: number } }
 		for _, incomingPacket in inboundQueue do
 			for identifier, data in incomingPacket do
-				local calls = callbackMap[identifier]
-
-				if not calls then
-					continue
+				while #data > 0 do
+					local content, serverTimeSent = table.remove(data, 1), table.remove(data, 1)
+					table.insert(orderedPackets, {
+						["Identifier"] = identifier :: Types.Identifier,
+						["Content"] = content :: Types.Content,
+						["ServerTimeSent"] = (serverTimeSent :: any) :: number,
+					})
 				end
+			end
+		end
 
-				if #calls == 1 then
-					local callback = calls[1]
-					if #data == 0 then
+		table.sort(
+			orderedPackets,
+			function(
+				dataInfo0: { Content: unknown, Identifier: string, ServerTimeSent: number },
+				dataInfo1: { Content: unknown, Identifier: string, ServerTimeSent: number }
+			): boolean
+				return dataInfo0.ServerTimeSent < dataInfo1.ServerTimeSent
+			end
+		)
+
+		for _, dataInfo in orderedPackets do
+			local identifier = dataInfo.Identifier
+			local data = { dataInfo.Content }
+
+			local calls = callbackMap[identifier]
+
+			if not calls then
+				continue
+			end
+
+			if #calls == 1 then
+				local callback = calls[1]
+				if #data == 0 then
+					RecycledSpawn(callback)
+				else
+					for _, content in data do
+						RecycledSpawn(callback, content)
+					end
+				end
+			else
+				if #data == 0 then
+					for _, callback in calls do
 						RecycledSpawn(callback)
-					else
-						for _, content in data do
-							RecycledSpawn(callback, content)
-						end
 					end
 				else
-					if #data == 0 then
-						for _, callback in calls do
-							RecycledSpawn(callback)
-						end
-					else
-						for _, callback in calls do
-							for _, content in data do
-								RecycledSpawn(callback, content)
-							end
+					for _, callback in calls do
+						for _, content in data do
+							RecycledSpawn(callback, content)
 						end
 					end
 				end

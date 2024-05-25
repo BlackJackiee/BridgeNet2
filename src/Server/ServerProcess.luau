@@ -97,18 +97,23 @@ function ServerProcess.start()
 
 		local sendStructure: { [Player]: { [Types.Identifier]: { Types.Content } } } = {}
 
+		-- BridgeNet doesn't maintain server to client event firing order, so this is a small fork that adds that.
+		-- It works by sending a secondary time value with every "content" data packet that's fired from the server,
+		-- then reorders them on the client using that value before the connected callbacks are invoked.
 		local function addContentToQueue(player: Player, identifier: Types.Identifier, content: Types.Content)
 			local playerContentQueue = sendStructure[player]
+			local currentTime = os.clock()
 
 			if not playerContentQueue then
 				-- Create a content queue for the player, initialize it with the content and identifier provided.
-				sendStructure[player] = { [identifier] = { content } }
+				sendStructure[player] = { [identifier] = { content, currentTime } }
 			else
 				if not playerContentQueue[identifier] then
 					-- Initialize the specific identifier queue with the content provided
-					playerContentQueue[identifier] = { content }
+					playerContentQueue[identifier] = { content, currentTime }
 				else
 					table.insert(playerContentQueue[identifier], content)
+					table.insert(playerContentQueue[identifier], currentTime)
 				end
 			end
 		end
