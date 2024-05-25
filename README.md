@@ -1,3 +1,6 @@
+# Fork Modification Info:
+BridgeNet doesn't maintain server to client event firing order, so this is a small fork that adds that. It works by sending a secondary time value with every "content" data packet that's fired from the server, then reorders them on the client using that value before the connected bridge callbacks are invoked.
+
 # I strongly recommend you use ByteNet over BridgeNet2: https://github.com/ffrostflame/ByteNet
 
 <div align="center">
